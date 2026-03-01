@@ -1,8 +1,3 @@
----
-title: IssacLab & MotrixLab
-
----
-
 # IssacLab & MotrixLab
 > Isaac-Navigation-Flat-Anymal-C-v0
 
@@ -11,7 +6,6 @@ title: IssacLab & MotrixLab
 
 ## 第 1 周：熟悉平台 & 跑通基础任务
 > 目标：搞懂 IsaacLab / MotrixLab 的基本使用方式，跑通示例任务
-本周学习重点
 ### IsaacLab 
 - IsaacLab仓库目录结构
 IsaacLab/
@@ -58,22 +52,55 @@ IsaacLab/
           ./isaaclab.sh-pscripts/reinforcement_learning/skrl/train.py--taskIsaac-Navigation-Flat-Anymal-C-v0--headless
       - test:
           ./isaaclab.sh-pscripts/reinforcement_learning/skrl/play.py--taskIsaac-Navigation-Flat-Anymal-C-v0--num_envs64
-  ![isaac_navigation_wk1](https://hackmd.io/_uploads/r1jziFgK-g.png)
+  ![isaac_navigation_test](images/isaac_navigation_test)
 
 - 在 MotrixLab 训练和推理
   - Unitree GO1 示例任务
+      - flat
     1. 环境预览
-          uv run scripts/view.py --env go1-flat-terrain-walk
+        uv run scripts/view.py --env go1-flat-terrain-walk
     2. 开始训练
         uv run scripts/train.py --env go1-flat-terrain-walk
     3. 查看训练进度
         uv run tensorboard --logdir runs/go1-flat-terrain-walk
     4. 测试训练结果
         uv run scripts/play.py --env go1-flat-terrain-walk
-
-
+![images/motrix_unitree_go1_test_plain](images/motrix_unitree_go1_test_plain)
+    - rough & stairs
+    0. 环境设置
+flat:
 ```
-# Copyright (C) 2020-2025 Motphys Technology Co., Ltd. All Rights Reserved.
+<worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.01" type="plane" material="groundplane" contype="1" conaffinity="0" priority="1"
+      friction="0.6" condim="3"/>
+</worldbody>
+```
+rough:
+```<geom name="floor" type="hfield" pos="0 0 0" size="10 10 1" hfield="rough_heightmap.png" material="groundplane" contype="1" conaffinity="0" friction="0.6"/>```
+box:
+```<geom type="box" pos="0.5 0 0.05" size="0.1 0.1 0.05" material="groundplane"/>
+<geom type="box" pos="-0.5 0.2 0.05" size="0.2 0.2 0.05" material="groundplane"/>
+```
+stairs:
+```<geom type="box" pos="0.0 0.0 0.05" size="0.5 1 0.05"/>
+<geom type="box" pos="0.5 0.0 0.15" size="0.5 1 0.05"/>
+<geom type="box" pos="1.0 0.0 0.25" size="0.5 1 0.05"/>
+```
+   1. 环境预览
+    uv run scripts/view.py --env go1-rough-terrain-walk
+    uv run scripts/view.py --env go1-stairs-terrain-walk
+    2. 开始训练
+    uv run scripts/train.py --env go1-rough-terrain-walk
+    uv run scripts/train.py --env go1-stairs-terrain-walk
+    3. 查看训练进度
+    uv run tensorboard --logdir runs/go1-rough-terrain-walk
+    4. 测试训练结果
+    由于粗糙地形场景中同时生成了了一个无限大平面和一个崎岖地形高度场，测试训练结果时会仿照训练过程先将智能体生成在平面上，完成一轮行走后再生成到崎岖地形上。用户需要主动调整相机视角和位置来观察智能体的状态。
+    uv run scripts/play.py --env go1-rough-terrain-walk
+    uv run scripts/play.py --env go1-stairs-terrain-walk
+    - Go1WalkNpEnvCfg 配置文件
+```# Copyright (C) 2020-2025 Motphys Technology Co., Ltd. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -95,11 +122,11 @@ from motrix_envs import registry
 from motrix_envs.base import EnvCfg
 
 model_file = os.path.dirname(__file__) + "/xmls/scene_motor_actuator.xml"
-
+#📌指定机器人模型xml文件
 
 @dataclass
-class NoiseConfig:
-    level: float = 1.0
+class NoiseConfig: #📌控制传感器/关节数据的噪声去模拟现实中的噪声
+    level: float = 1.0 #📌 总噪声强度
     scale_joint_angle: float = 0.03
     scale_joint_vel: float = 1.5
     scale_gyro: float = 0.2
@@ -138,7 +165,7 @@ class InitState:
 
 
 @dataclass
-class Commands:
+class Commands: #📌 指定机器人可以接受的线速度和角速度的上下限
     vel_limit = [
         [0.0, -1.0, -1.0],  # min: vel_x [m/s], vel_y [m/s], ang_vel [rad/s]
         [2.0, 1.0, 1.0],  # max
@@ -146,7 +173,7 @@ class Commands:
 
 
 @dataclass
-class Normalization:
+class Normalization: #📌 状态信息（速度、角度等）进行归一化，使训练更稳定
     lin_vel = 2
     ang_vel = 0.25
     dof_pos = 1
@@ -214,6 +241,7 @@ class Go1WalkNpEnvCfg(EnvCfg):
     sim_dt: float = 0.01
     ctrl_dt: float = 0.01
 ```
+- Go1WalkTask 环境实现
 ```
 # Copyright (C) 2020-2025 Motphys Technology Co., Ltd. All Rights Reserved.
 #
@@ -276,7 +304,7 @@ class Go1WalkTask(NpEnv):
     _init_dof_pos: np.ndarray
     _init_dof_vel: np.ndarray
 
-    def __init__(self, cfg: Go1WalkNpEnvCfg, num_envs=1):
+    def __init__(self, cfg: Go1WalkNpEnvCfg, num_envs=1): 
         super().__init__(cfg, num_envs)
         self._init_action_space()
         self._init_obs_space()
@@ -424,9 +452,9 @@ class Go1WalkTask(NpEnv):
         return self._model.get_sensor_value(self.cfg.sensor.gyro, data)
 
     def update_state(self, state):
-        state = self.update_observation(state)
-        state = self.update_terminated(state)
-        state = self.update_reward(state)
+        state = self.update_observation(state) 
+        state = self.update_terminated(state) #📌 检查机器人是否碰撞、跌倒，决定 episode 是否结束
+        state = self.update_reward(state) #📌 计算奖励
         return state
 
     def _get_obs(self, data: mtx.SceneData, info: dict) -> np.ndarray:
@@ -629,259 +657,3 @@ class Go1WalkTask(NpEnv):
             axis=1,
         )
 ```
-    
-  
-记得多更换下模型训练、推理命令的参数，比如设置环境数，无头模式等
-
-## 第 2 周：深入理解 Navigation-Flat-Anymal-C-v0
-拆解并完全理解 lsaaclab中该任务的执行流程、配置与奖励机制
-本周学习重点
-```
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
-import math
-
-from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import EventTermCfg as EventTerm
-from isaaclab.managers import ObservationGroupCfg as ObsGroup
-from isaaclab.managers import ObservationTermCfg as ObsTerm
-from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.managers import TerminationTermCfg as DoneTerm
-from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
-
-import isaaclab_tasks.manager_based.navigation.mdp as mdp
-from isaaclab_tasks.manager_based.locomotion.velocity.config.anymal_c.flat_env_cfg import AnymalCFlatEnvCfg
-
-LOW_LEVEL_ENV_CFG = AnymalCFlatEnvCfg()
-
-
-@configclass
-class EventCfg:
-    """Configuration for events."""
-
-    reset_base = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
-            "velocity_range": {
-                "x": (-0.0, 0.0),
-                "y": (-0.0, 0.0),
-                "z": (-0.0, 0.0),
-                "roll": (-0.0, 0.0),
-                "pitch": (-0.0, 0.0),
-                "yaw": (-0.0, 0.0),
-            },
-        },
-    )
-
-
-@configclass
-class ActionsCfg:
-    """Action terms for the MDP."""
-
-    pre_trained_policy_action: mdp.PreTrainedPolicyActionCfg = mdp.PreTrainedPolicyActionCfg(
-        asset_name="robot",
-        policy_path=f"{ISAACLAB_NUCLEUS_DIR}/Policies/ANYmal-C/Blind/policy.pt",
-        low_level_decimation=4,
-        low_level_actions=LOW_LEVEL_ENV_CFG.actions.joint_pos,
-        low_level_observations=LOW_LEVEL_ENV_CFG.observations.policy,
-    )
-
-
-@configclass
-class ObservationsCfg:
-    """Observation specifications for the MDP."""
-
-    @configclass
-    class PolicyCfg(ObsGroup):
-        """Observations for policy group."""
-
-        # observation terms (order preserved)
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
-        projected_gravity = ObsTerm(func=mdp.projected_gravity)
-        pose_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "pose_command"})
-
-    # observation groups
-    policy: PolicyCfg = PolicyCfg()
-
-
-@configclass
-class RewardsCfg:
-    """Reward terms for the MDP."""
-
-    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-400.0)
-    position_tracking = RewTerm(
-        func=mdp.position_command_error_tanh,
-        weight=0.5,
-        params={"std": 2.0, "command_name": "pose_command"},
-    )
-    position_tracking_fine_grained = RewTerm(
-        func=mdp.position_command_error_tanh,
-        weight=0.5,
-        params={"std": 0.2, "command_name": "pose_command"},
-    )
-    orientation_tracking = RewTerm(
-        func=mdp.heading_command_error_abs,
-        weight=-0.2,
-        params={"command_name": "pose_command"},
-    )
-
-
-@configclass
-class CommandsCfg:
-    """Command terms for the MDP."""
-
-    pose_command = mdp.UniformPose2dCommandCfg(
-        asset_name="robot",
-        simple_heading=False,
-        resampling_time_range=(8.0, 8.0),
-        debug_vis=True,
-        ranges=mdp.UniformPose2dCommandCfg.Ranges(pos_x=(-3.0, 3.0), pos_y=(-3.0, 3.0), heading=(-math.pi, math.pi)),
-    )
-
-
-@configclass
-class TerminationsCfg:
-    """Termination terms for the MDP."""
-
-    time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    base_contact = DoneTerm(
-        func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="base"), "threshold": 1.0},
-    )
-
-
-@configclass
-class NavigationEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the navigation environment."""
-
-    # environment settings
-    scene: SceneEntityCfg = LOW_LEVEL_ENV_CFG.scene
-    actions: ActionsCfg = ActionsCfg()
-    observations: ObservationsCfg = ObservationsCfg()
-    events: EventCfg = EventCfg()
-    # mdp settings
-    commands: CommandsCfg = CommandsCfg()
-    rewards: RewardsCfg = RewardsCfg()
-    terminations: TerminationsCfg = TerminationsCfg()
-
-    def __post_init__(self):
-        """Post initialization."""
-
-        self.sim.dt = LOW_LEVEL_ENV_CFG.sim.dt
-        self.sim.render_interval = LOW_LEVEL_ENV_CFG.decimation
-        self.decimation = LOW_LEVEL_ENV_CFG.decimation * 10
-        self.episode_length_s = self.commands.pose_command.resampling_time_range[1]
-
-        if self.scene.height_scanner is not None:
-            self.scene.height_scanner.update_period = (
-                self.actions.pre_trained_policy_action.low_level_decimation * self.sim.dt
-            )
-        if self.scene.contact_forces is not None:
-            self.scene.contact_forces.update_period = self.sim.dt
-
-
-class NavigationEnvCfg_PLAY(NavigationEnvCfg):
-    def __post_init__(self) -> None:
-        # post init of parent
-        super().__post_init__()
-
-        # make a smaller scene for play
-        self.scene.num_envs = 50
-        self.scene.env_spacing = 2.5
-        # disable randomization for play
-        self.observations.policy.enable_corruption = False
-```
-理解基础结构
-- 环境注册
-  - 文件：config/anymal_c/__init__.py
-  - 理解：环境如何注册到 Gymnasium
-- 环境配置
-  - 文件：config/anymal_c/navigation_env_cfg.py
-  - 理解：各个配置类的作用（Actions, Observations, Rewards, Commands, Terminations）
-- 预训练策略动作
-  - 文件：`mdp/pre_trained_policy_action.py
-  - 理解：层次化控制的实现原理
-- 奖励函数
-  - 文件：`mdp/rewards.py`
-  - 理解：如何计算位置和朝向跟踪奖励
-- 低层环境配置
-  - 文件：`locomotion/velocity/config/anymal_c/flat_env_cfg.py`
-  - 理解：低层策略需要什么观测和动作
-深入理解
-- 研究低层策略
-  - 查看低层策略的输入输出
-  - 理解为什么需要 low_level_decimation
-- 修改奖励函数
-  - 尝试不同的奖励权重
-  - 理解奖励函数对训练的影响
-- 修改命令生成
-  - 改变目标位置范围
-  - 修改命令重采样时间
-周报内容
-1. 为什么需要层次化控制？
-2. low_level_decimation 的作用是什么？
-3. 低层策略的观测从哪里来？
-4. 如何修改目标位置范围？
-5. 输出一个episode完整数据流的示意图
-
-
-第 3 周：开始迁移
-目标：迁移准备 → 理解 MotrixLab 对 Anymal C 的支持方式 → 搭建最小可运行环境
-本周学习重点
-项目初始化、模型迁移、配置类迁移
-- 创建目录结构
-navigation/anymal_c/
-├── __init__.py          # 模块导出
-├── cfg.py               # 配置类定义
-├── anymal_c_np.py       # 环境实现
-└── xmls/
-    ├── scene.xml        # 主场景文件
-    ├── anymal_c.xml     # 机器人模型
-    └── assets/          # 资源文件
-- 资产文件下载
-网址：https://github.com/google-deepmind/mujoco_menagerie
-学习资产模型组件：
-  - Body（刚体）：具有质量和惯性的物理对象
-  - Site（站点）：用于标记位置和方向的虚拟点
-  - Geom（几何体）：用于碰撞检测和可视化的几何形状
-  - Joint（关节）：连接刚体，定义运动约束
-- 配置类迁移
-  - 创建配置类框架
-  - 从 Isaac Lab 的 *_cfg.py 提取参数
-  - 组织成嵌套的配置类
-  - 设置合理的默认值
-  - 使用 field(default_factory=...) 处理可变默认值
-- 环境类框架搭建
-  - 创建环境类，实现 `__init__`
-    - 获取关键 body、joint、actuator
-    - 定义动作/观测空间
-    - 初始化默认状态
-    - 设置缓冲区
-- 环境类的核心方法实现
-  - 动作处理 apply_action
-  - 观测计算 _compute_observation 与空间对齐
-  - 奖励计算 _compute_reward
-  - 终止条件 _check_termination
-  - 重置逻辑 reset
-  - 状态更新 update_state
-周报内容
-- 代码文件
-
-
-第 4 周：完整迁移 & 复现结果
-目标：完成任务迁移、跑 RL 训练、复现导航行为
-本周重点
-- 功能调试
-- 训练测试
-  - 尝试训练 PPO，用默认超参数
-- 看懂tensorboard训练曲线
-周报内容
-- 迁移完成的完整任务文件
-- 训练日志或曲线的解释说明
