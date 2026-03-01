@@ -657,3 +657,58 @@ class Go1WalkTask(NpEnv):
             axis=1,
         )
 ```
+
+## 第 2 周：深入理解 Navigation-Flat-Anymal-C-v0
+>拆解并完全理解 lsaaclab中该任务的执行流程、配置与奖励机制
+
+### 理解基础结构
+- 环境注册
+  - 文件：config/anymal_c/__init__.py
+  - 作用：在 Isaac Lab / Gymnasium 中注册环境，使得训练脚本可以通过 gym.make("Navigation-Flat-Anymal-C-v0") 调用。本质上是用一个配置类（这里是 NavigationEnvCfg）包装低层的仿真环境和 MDP。
+- 环境配置
+  - 文件：config/anymal_c/navigation_env_cfg.py
+  - 作用：
+      - Actions
+        定义机器人动作，使用低层策略 pre_trained_policy_action 控制关节
+      - Observations
+        定义智能体可观测的信息，包括机器人线速度、投影重力、pose 命令
+      - Rewards
+        定义奖励函数，包括终止惩罚、位置跟踪奖励、方向跟踪奖励
+      - Commands
+        定义命令生成器，产生目标位姿 pose_command 作为高层控制目标
+      - Terminations
+        定义终止条件，如超时或非法接触
+- 预训练策略动作
+  - 文件：`mdp/pre_trained_policy_action.py
+  - 作用：实现 层次化控制：高层命令 -> 低层策略动作。高层只关心目标位置和朝向，低层预训练策略负责从当前状态生成关节控制命令。
+  - 参数解释：
+      - policy_path: 低层策略权重文件
+      - low_level_decimation: 决定低层策略更新频率（每 n 个仿真步调用一次低层策略）
+      - low_level_actions, low_level_observations: 指定低层策略使用的动作和观测维度
+- 奖励函数
+  - 文件：`mdp/rewards.py`
+  - Termination Penalty：如果机器人倒地或非法接触，惩罚 -400
+  - Position Tracking：tanh 函数将位置误差映射到奖励（weight=0.5）
+  - Fine-grained Position Tracking：更精细位置跟踪（weight=0.5）
+  - Orientation Tracking：朝向误差惩罚（weight=-0.2）
+  - 计算方法：通过高层生成的目标 pose_command 与机器人当前位姿比较，奖励可以调整 weight 和 std 
+- 低层环境配置
+  - 文件：`locomotion/velocity/config/anymal_c/flat_env_cfg.py`
+  - 定义低层策略的观测 (joint positions, velocities) 和动作 (joint_pos)包括仿真步长 (dt)、渲染间隔 (decimation) 等
+
+### Wk5Q
+1. 为什么需要层次化控制？
+- 高维机器人（Anymal-C）直接控制关节很难训练，收敛慢，还可以复用底层策略和直接调节奖励函数
+2. low_level_decimation 的作用是什么？
+- 在高层动作每步更新的情况下，每隔decimation的时间更新一次底层策略，节省计算的资源和提高训练效率
+3. 低层策略的观测从哪里来？
+- 来自joint的angle和velocity、机器人base线速度、投影重力vector（LOW_LEVEL_ENV_CFG.observations.policy），输出控制命令joint_pos
+4. 如何修改目标位置范围？
+- 修改 CommandsCfg.pose_command.ranges
+5. 输出一个episode完整数据流的示意图
+```mermaid
+flowchart TD
+A(env reset & episode start) --> B(high level observations = base pose + object pose) --> C(high level policy web e.g. PPO) --> D(velocity command: xyz vector) --> E(low level observations = joint angle + velocity command) --> F(joint object position) --> G(PD control & lever) --> H(dt) --> I(calculate reward = position error + direction error) --> J(check termination condition)
+J --> |not terminated| A
+J --> |terminated| K(end of an episode)
+```
